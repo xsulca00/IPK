@@ -11,6 +11,11 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include <time.h>
+#include <stdlib.h>
+
+#include "bitstream.h"
+
 using namespace std;
 
 struct Remote_path
@@ -74,17 +79,41 @@ Options get_options(int argc, char **argv)
     return o;
 }
 
-string build_req_put(const string& cmd, const string& rmt_path, const string& host)
+string build_msg(const string& cmd, const string& rmt_path, const string& host)
 {
-    return  cmd+' ' + rmt_path+" "+"HTTP/1.1\r\n";
-          +"Host: " + host;
+    char out[200] {};
+    time_t t {time(NULL)};
 
+    errno = 0;
+    struct tm* tmp {localtime(&t)};
+
+    if (tmp == NULL)
+    {
+        perror("localtime");
+        exit(EXIT_FAILURE);
+    }
+
+    // get time in specified format
+    if (strftime(out, sizeof(out), "%a, %m %b %Y %T %Z", tmp) == 0) 
+    {
+       cerr << "strftime returned 0";
+       exit(EXIT_FAILURE);
+    }
+
+    return  cmd + " " + rmt_path + " " + "HTTP/1.1" + "\r\n"
+          +"Host: " + host + "\r\n"
+          +"Date: " + out + "\r\n"
+          +"Accept: application/json" + "\r\n"
+          +"Accept-Encoding: identity" + "\r\n"
+          +"Content-Type: application/octet-stream" + "\r\n"
+          +"\r\n"
+          +"\r\n";
 }
 
 int main(int argc, char **argv)
 {
-    Options  options {get_options(argc, argv)};
-    int              client_socket {-1}; 
+    Options options {get_options(argc, argv)};
+    int client_socket {-1}; 
 
     errno = 0;
     if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) <= 0)
@@ -101,8 +130,6 @@ int main(int argc, char **argv)
         herror("Get host by name error!");
         exit(EXIT_FAILURE);
     }
-
-    cout << server->h_name << '\n';
 
     struct sockaddr_in server_address {};
 
@@ -123,10 +150,20 @@ int main(int argc, char **argv)
     }
 
     // connection established, now you can send data
-    const string&   msg {"This is test message bitch!\n"};
+
+    // type = file | folder
+    // generate request
+    const string& msg {build_msg(options.command, 
+                                 "/"+options.remote_path.path+"?type=file", 
+                                 server->h_name)};
+
+    vector<char> bytes {get_bytes_from("s/homes/xsulca00/Stažené/elfutils-0.168.zip")};
+   size_t size {bytes.size()};
+
 
     errno = 0;
-    const auto b1 = send(client_socket, msg.c_str(), msg.length(), 0);
+    // sending bytes!
+    const auto b1 {send(client_socket, msg.c_str(), msg.length(), 0)};
     if ( b1 < 0)
     {
         perror("Send error!");
@@ -136,7 +173,8 @@ int main(int argc, char **argv)
     char buf[1024] {};
 
     errno = 0;
-    const auto b2 = recv(client_socket, buf, sizeof(buf), 0);
+    // recieving bytes!
+    const auto b2 {recv(client_socket, buf, sizeof(buf), 0)};
     if ( b2 < 0)
     {
         perror("Send error!");
