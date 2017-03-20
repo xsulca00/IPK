@@ -7,20 +7,20 @@ LS=ls
 BITS=bitstream
 
 all: bitstream.o ls.o client.o server.o
-	$(CC) -o $(CLI) $(BITS).o $(LS).o $(CLI).o
-	$(CC) -o $(SVR) $(BITS).o $(LS).o $(SVR).o
+	$(CC) $(FLAGS) -o $(CLI) $(BITS).o $(LS).o $(CLI).o
+	$(CC) $(FLAGS) -o $(SVR) $(BITS).o $(LS).o $(SVR).o
 
 server.o: ftrestd.cpp
-	$(CC) -c $(SVR).cpp
+	$(CC) $(FLAGS) -c $(SVR).cpp
 
 client.o: ftrest.cpp 
-	$(CC) -c $(CLI).cpp
+	$(CC) $(FLAGS) -c $(CLI).cpp
 
 bitstream.o: bitstream.h bitstream.cpp
-	$(CC) -c $(BITS).cpp
+	$(CC) $(FLAGS) -c $(BITS).cpp
 
 ls.o: ls.h ls.cpp
-	$(CC) -c $(LS).cpp
+	$(CC) $(FLAGS) -c $(LS).cpp
 
 clean:
 	rm -f *.o

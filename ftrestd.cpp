@@ -1,5 +1,7 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
+#include <sstream>
 
 #include <unistd.h>
 #include <string.h>
@@ -77,6 +79,9 @@ int main(int argc, char **argv)
 
     int comm_socket {-1};
 
+    string buf{};
+    buf.resize(4096);
+
     for(;;)
     {
         struct sockaddr_in  client {};
@@ -88,17 +93,60 @@ int main(int argc, char **argv)
 
         if (comm_socket > 0)
         {
+            ofstream of {"out.zip", ios_base::binary};
+            size_t size {0};
+            unsigned long counter {0};
             for (int res {};;)
             {
-                char buff[1024] {};
                 // bytes recieved
-                res = recv(comm_socket, buff, sizeof(buff), 0);
+                res = recv(comm_socket, &buf[0], 4096, 0);
                 if (res <= 0)
                 {
                     break;
                 }
-                printf("%s", buff);
-                send(comm_socket, buff, strlen(buff), 0);
+
+                buf.resize(res);
+
+                static bool found {false};
+
+                if (!found)
+                {
+                    auto ofs = buf.find("\r\n\r\n");
+                    if (ofs == string::npos)
+                        break;
+                    // found the end of message!
+                    string msg {buf, 0, ofs};
+                    stringstream ss {msg};
+                    string word;
+
+                    while (ss >> word)
+                        if (word == "Content-Length:")
+                            ss >> size;
+
+                    ofs += strlen("\r\n\r\n");
+                    string data {buf, ofs};
+                    of << data;
+                    counter += data.length();
+                    found = true;
+                }
+                else if (counter != size)
+                {
+                    counter += res;
+                    of << buf;
+                }
+
+                if (found && counter == size)
+                {
+                    cout << counter << " == " << size << '\n';
+                    cout << "Closing file!\n";
+                    of.close();
+                    size = counter = 0;
+                    found = false;
+                }
+
+                //printf("%s", buf);
+//                const char* msg = "ahoj!";
+ //               send(comm_socket, msg, strlen(msg), 0);
             }
         }
     }

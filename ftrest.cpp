@@ -2,6 +2,7 @@
 #include <vector>
 #include <regex>
 #include <string>
+#include <map>
 
 #include <unistd.h>
 #include <string.h>
@@ -21,7 +22,7 @@ using namespace std;
 struct Remote_path
 {
     string  server_name;
-    int     port {};
+    int     port;
     string  path;
 };
 
@@ -79,7 +80,8 @@ Options get_options(int argc, char **argv)
     return o;
 }
 
-string build_msg(const string& cmd, const string& rmt_path, const string& host)
+// left out two new lines in the end, add them manually
+string build_msg(Options& o)
 {
     char out[200] {};
     time_t t {time(NULL)};
@@ -100,18 +102,45 @@ string build_msg(const string& cmd, const string& rmt_path, const string& host)
        exit(EXIT_FAILURE);
     }
 
+    const string& cmd {o.command};
+    const string& rmt_path {"/"+o.remote_path.path+"?type=file"};
+    const string& host {o.remote_path.server_name};
+
     return  cmd + " " + rmt_path + " " + "HTTP/1.1" + "\r\n"
           +"Host: " + host + "\r\n"
           +"Date: " + out + "\r\n"
           +"Accept: application/json" + "\r\n"
-          +"Accept-Encoding: identity" + "\r\n"
-          +"Content-Type: application/octet-stream" + "\r\n"
-          +"\r\n"
-          +"\r\n";
+          +"Accept-Encoding: identity" + "\r\n";
+}
+
+string cmd_put(Options& o)
+{
+    if (o.local_path == "")
+    {
+        cerr << "Empty local path to file!";
+        return "";
+    }
+
+    // build basic message
+    string msg {build_msg(o)};
+    vector<char> bytes {get_bytes_from(o.local_path)};
+    // add two params
+    msg = msg   + "Content-Type: application/octet-stream" + "\r\n"
+                + "Content-Length: " + to_string(bytes.size()) + "\r\n"
+                + "\r\n";
+
+    msg.append(bytes.begin(), bytes.end());
+
+    return msg;
 }
 
 int main(int argc, char **argv)
 {
+    using cmd_fun = string(Options&);
+    map<string, cmd_fun*> commands;
+    
+    commands["put"] = cmd_put;
+
     Options options {get_options(argc, argv)};
     int client_socket {-1}; 
 
@@ -150,35 +179,39 @@ int main(int argc, char **argv)
     }
 
     // connection established, now you can send data
-
-    // type = file | folder
-    // generate request
-    const string& msg {build_msg(options.command, 
-                                 "/"+options.remote_path.path+"?type=file", 
-                                 server->h_name)};
-
-    vector<char> bytes {get_bytes_from("s/homes/xsulca00/Stažené/elfutils-0.168.zip")};
-   size_t size {bytes.size()};
-
-
-    errno = 0;
-    // sending bytes!
-    const auto b1 {send(client_socket, msg.c_str(), msg.length(), 0)};
-    if ( b1 < 0)
+    
+    // find command & generate message
+    if (cmd_fun* cmd = commands[options.command])
     {
-        perror("Send error!");
-        exit(EXIT_FAILURE);
+        string msg {cmd(options)};
+
+        if (msg != "")
+        {
+            errno = 0;
+            // sending bytes!
+            const auto b1 {send(client_socket, msg.c_str(), msg.length(), 0)};
+            if ( b1 < 0)
+            {
+                perror("Send error!");
+                exit(EXIT_FAILURE);
+            }
+
+            char buf[1024] {};
+
+            errno = 0;
+            // recieving bytes!
+            const auto b2 {recv(client_socket, buf, sizeof(buf), 0)};
+            if ( b2 < 0)
+            {
+                perror("Send error!");
+                exit(EXIT_FAILURE);
+            }
+            cout << buf << '\n';
+        }
     }
-
-    char buf[1024] {};
-
-    errno = 0;
-    // recieving bytes!
-    const auto b2 {recv(client_socket, buf, sizeof(buf), 0)};
-    if ( b2 < 0)
+    else
     {
-        perror("Send error!");
-        exit(EXIT_FAILURE);
+        cerr << "Command '" << options.command << "' not found!\n";
     }
 
     errno = 0;
